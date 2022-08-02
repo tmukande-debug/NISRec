@@ -7,4 +7,4 @@ Python >= 3.5
 numpy  
 # Model Training
 To train our model on the dataset (eg ml-1m) with default hyper-parameters:  
-python main.py --dataset=ml-1m --train_dir=default 
+`python main.py --dataset=ml-1m --train_dir=default`
