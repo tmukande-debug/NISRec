@@ -2,7 +2,7 @@
 This is our Pytorch implementation for the paper:
 The code is tested under a Linux desktop (RTX 3090 GPU).
 # Dependencies
-* **Pytorch** >= 1.6  
+* **PyTorch** >= 1.6  
 * **Python** >= 3.5  
 * **numpy**  
 # Model Training
