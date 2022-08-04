@@ -1,5 +1,5 @@
 # NISRec
-This is our Pytorch implementation for the paper:
+This is our PyTorch implementation for the paper:
 The code is tested under a Linux desktop (RTX 3090 GPU).
 # Dependencies
 * **PyTorch** >= 1.6  
