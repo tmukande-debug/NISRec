@@ -14,7 +14,7 @@ import scipy
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-K = 5 
+K = 5
 EMBEDDING_SIZE = 100
 batch_size = 32
 lr = 0.2
@@ -27,7 +27,7 @@ class NodeEmbeddingDataset(tud.Dataset):
             word2idx: the dictionary from word to index
             word_freqs: the frequency of each word
         '''
-        super(NodeEmbeddingDataset, self).__init__() 
+        super(NodeEmbeddingDataset, self).__init__()
         self.User = User
         self.Item = Item
         self.usernum = usernum
@@ -36,10 +36,15 @@ class NodeEmbeddingDataset(tud.Dataset):
         self.max_item_freq = usernum//10
 
     def __len__(self):
-        return self.usernum  
+        return self.usernum
 
     def __getitem__(self, idx):
-        center_nodes = idx + 1  
+        ''' 这个function返回以下数据用于训练
+            - 中心词
+            - 这个单词附近的positive word
+            - 随机采样的K个单词作为negative word
+        '''
+        center_nodes = idx + 1
         idx = self.maxlen - 1
         neigh_seq = []
         for i in reversed(self.User[center_nodes][:-1]):
@@ -72,8 +77,6 @@ class NodeEmbeddingDataset(tud.Dataset):
             if (i == 0):
                 continue
             for k in Item[i]:
-                # print([k])
-                # print(type([k]))
                 pos_indices[count] = k
                 count+=1
                 if(count>=50):
@@ -85,6 +88,8 @@ class NodeEmbeddingDataset(tud.Dataset):
             pos_indices.append(last_one)
             count+=1
         return pos_indices
+
+
 
 class EmbeddingModel(nn.Module):
     def __init__(self, vocab_size, embed_size, device):
@@ -126,6 +131,8 @@ class EmbeddingModel(nn.Module):
 
     def input_embedding(self):
         return self.in_embed.weight.detach().numpy()
+
+
 
 
 
