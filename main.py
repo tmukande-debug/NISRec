@@ -49,41 +49,40 @@ f.close()
 
 dataset = data_partition(args.dataset, args.maxlen)
 [user_train, user_train_valid, user_train_test, user_valid, user_test, usernum, itemnum, all_User, all_Item, User, Item, train_User, train_Item, n_hots, user_map, item_count] = dataset
-# item_count用于后面的筛选，交互次数太多的item连接的用户不需要考虑为embedding-learning的邻居，但是在最后的cos计算的时候可以考虑
 
-###############
-#进行一个user 的node2vec的学习
-# MAX_USER_SIZE = usernum
-# EMBEDDING_SIZE = 100
-# batch_size = 32
-# dataset = NodeEmbeddingDataset(user_train, train_Item, usernum, item_count)
-# dataloader = tud.DataLoader(dataset, batch_size, shuffle=True)
+##############
+# A special node2vec algorithm for Learning user representations
+MAX_USER_SIZE = usernum
+EMBEDDING_SIZE = 100
+batch_size = 32
+dataset = NodeEmbeddingDataset(user_train, train_Item, usernum, item_count)
+dataloader = tud.DataLoader(dataset, batch_size, shuffle=True)
 
 
-# pre_model = EmbeddingModel(usernum+1, EMBEDDING_SIZE, args.device)
-# optimizer = torch.optim.Adam(pre_model.parameters(), lr=1e-3)
-# pre_model.to(args.device)
-# pre_model.train()
-# for e in range(100):
-#     for i, (input_labels, pos_labels, neg_labels) in enumerate(dataloader):
-#         input_labels = np.array(input_labels)
-#         pos_labels = np.array(pos_labels)
-#         neg_labels = np.array(neg_labels)
-#         input_labels = input_labels
-#         pos_labels = pos_labels
-#         neg_labels = neg_labels
+pre_model = EmbeddingModel(usernum+1, EMBEDDING_SIZE, args.device)
+optimizer = torch.optim.Adam(pre_model.parameters(), lr=1e-3)
+pre_model.to(args.device)
+pre_model.train()
+for e in range(100):
+    for i, (input_labels, pos_labels, neg_labels) in enumerate(dataloader):
+        input_labels = np.array(input_labels)
+        pos_labels = np.array(pos_labels)
+        neg_labels = np.array(neg_labels)
+        input_labels = input_labels
+        pos_labels = pos_labels
+        neg_labels = neg_labels
 
-#         optimizer.zero_grad()
-#         loss = pre_model(input_labels, pos_labels, neg_labels).mean()
-#         loss.backward()
+        optimizer.zero_grad()
+        loss = pre_model(input_labels, pos_labels, neg_labels).mean()
+        loss.backward()
 
-#         optimizer.step()
+        optimizer.step()
 
-#         if i % 10 == 0:
-#             print('epoch', e, 'iteration', i, loss.item())
+        if i % 10 == 0:
+            print('epoch', e, 'iteration', i, loss.item())
 
-#############
-# pre_model.eval()
+############
+pre_model.eval()
 
 
 num_batch = len(user_train) // args.batch_size  # tail? + ((len(user_train) % args.batch_size) != 0)
@@ -100,7 +99,6 @@ try:
     train_neighbor_matrix = pickle.load(
         open('data/ml-1m/train_neighbor_matrix_%s_%d_%d.pickle' % (args.dataset, 10, 50), 'rb'))
 except:
-    # Neighbor_Op之前进行一个node2vec的预处理就ok了,n_hots换成embeddings就ok了，然后直接选user就ok了
     train_neighbor_matrix = Neighbor_Op(user_train, usernum, args.maxlen, train_Item, n_hots, "train", pre_model, args.device)
     pickle.dump(train_neighbor_matrix,
                 open('data/ml-1m/train_neighbor_matrix_%s_%d_%d.pickle' % (args.dataset, 10, 50), 'wb'))
