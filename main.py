@@ -3,9 +3,11 @@ import pickle
 import time
 import torch
 import argparse
-
+import torch.utils.data as tud
 from model import NISRec
 from tqdm import tqdm
+
+from node2vec import NodeEmbeddingDataset, EmbeddingModel
 from utils import *
 
 
@@ -16,8 +18,8 @@ def str2bool(s):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', required=True)
-parser.add_argument('--train_dir', required=True)
+parser.add_argument('--dataset', default = 'ml-1m')
+parser.add_argument('--train_dir', default = 'default')
 # parser.add_argument('--batch_size', default=128, type=int)
 parser.add_argument('--batch_size', default=32, type=int)
 parser.add_argument('--short_length', default=10, type=int)
@@ -40,14 +42,50 @@ with open(os.path.join(args.dataset + '_' + args.train_dir, 'args.txt'), 'w') as
     f.write('\n'.join([str(k) + ',' + str(v) for k, v in sorted(vars(args).items(), key=lambda x: x[0])]))
 f.close()
 
-SAVE_MODEL_DIR = f"./saved_models/{args.dataset}"
-if not os.path.isdir(SAVE_MODEL_DIR):
-    os.mkdir(SAVE_MODEL_DIR)
-SAVE_MODEL_PATH = SAVE_MODEL_DIR + f"/checkpoint.{args.dataset}.pth.tar"
+# SAVE_MODEL_DIR = f"./saved_models/{args.dataset}"
+# if not os.path.isdir(SAVE_MODEL_DIR):
+#     os.mkdir(SAVE_MODEL_DIR)
+# SAVE_MODEL_PATH = SAVE_MODEL_DIR + f"/checkpoint.{args.dataset}.pth.tar"
 
 dataset = data_partition(args.dataset, args.maxlen)
 [user_train, user_train_valid, user_train_test, user_valid, user_test, usernum, itemnum, all_User, all_Item, User, Item,
- train_User, train_Item, n_hots] = dataset
+ train_User, train_Item, n_hots, user_map, item_count] = dataset
+
+###############
+# A special node2vec algorithm for Learning user representations,
+#  we use the learned representations to filter better neighbor users for the target user
+MAX_USER_SIZE = usernum
+EMBEDDING_SIZE = 100
+batch_size = 32
+dataset = NodeEmbeddingDataset(user_train, train_Item, usernum, item_count)
+dataloader = tud.DataLoader(dataset, batch_size, shuffle=True)
+
+
+pre_model = EmbeddingModel(usernum, EMBEDDING_SIZE)
+optimizer = torch.optim.Adam(pre_model.parameters(), lr=1e-3)
+
+for e in range(100):
+    for i, (input_labels, pos_labels, neg_labels) in enumerate(dataloader):
+        input_labels = np.array(input_labels)
+        pos_labels = np.array(pos_labels)
+        neg_labels = np.array(neg_labels)
+        input_labels = input_labels
+        pos_labels = pos_labels
+        neg_labels = neg_labels
+
+        optimizer.zero_grad()
+        loss = pre_model(input_labels, pos_labels, neg_labels).mean()
+        loss.backward()
+
+        optimizer.step()
+
+        if i % 10 == 0:
+            print('epoch', e, 'iteration', i, loss.item())
+
+################
+
+
+
 num_batch = len(user_train) // args.batch_size  # tail? + ((len(user_train) % args.batch_size) != 0)
 cc = 0.0
 for u in user_train:
@@ -62,7 +100,7 @@ try:
     train_neighbor_matrix = pickle.load(
         open('data/ml-1m/train_neighbor_matrix_%s_%d_%d.pickle' % (args.dataset, 10, 50), 'rb'))
 except:
-    train_neighbor_matrix = Neighbor_Op(user_train, usernum, args.maxlen, train_Item, n_hots, "train")
+    train_neighbor_matrix = Neighbor_Op(user_train, usernum, args.maxlen, train_Item, n_hots, "train", pre_model.in_embed)
     pickle.dump(train_neighbor_matrix,
                 open('data/ml-1m/train_neighbor_matrix_%s_%d_%d.pickle' % (args.dataset, 10, 50), 'wb'))
 
@@ -109,7 +147,7 @@ except:
     pickle.dump(test_neighborAt_matrix,
                 open('data/ml-1m/test_neighborAt_matrix_%s_%d_%d.pickle' % (args.dataset, 10, 10), 'wb'))
 
-# .................................................
+
 sampler = WarpSampler(user_train, train_neighbor_matrix, train_neighborAt_matrix, usernum, itemnum,
                       batch_size=args.batch_size, maxlen=args.maxlen,
                       n_workers=3)
@@ -193,19 +231,19 @@ for epoch in range(epoch_start_idx, args.num_epochs + 1):
         t0 = time.time()
         model.train()
 
-    if epoch == args.num_epochs:
-        torch.save(
-            {
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': adam_optimizer.state_dict(),
-                #                     'loss': np.mean(loss),
-            }, SAVE_MODEL_PATH
-        )
-        print("model saved")
-        folder = args.dataset + '_' + args.train_dir
-        fname = 'NISRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
-        fname = fname.format(args.num_epochs, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
-        torch.save(model.state_dict(), os.path.join(folder, fname))
+    # if epoch == args.num_epochs:
+    #     torch.save(
+    #         {
+    #             'model_state_dict': model.state_dict(),
+    #             'optimizer_state_dict': adam_optimizer.state_dict(),
+    #             #                     'loss': np.mean(loss),
+    #         }, SAVE_MODEL_PATH
+    #     )
+    #     print("model saved")
+    #     folder = args.dataset + '_' + args.train_dir
+    #     fname = 'NISRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
+    #     fname = fname.format(args.num_epochs, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
+    #     torch.save(model.state_dict(), os.path.join(folder, fname))
 
 f.close()
 sampler.close()
