@@ -16,24 +16,27 @@ def random_neq(l, r, s):
         t = np.random.randint(l, r)
     return t
 
-def NeighborAt_Op(user_train, usernum, maxlen, Item, User, n_hots , label, short_length):
-#     if label =="train":
-#         end = -1
-#     elif label == "test":
-#         end =-2
+
+def NeighborAt_Op(user_train, usernum, maxlen, Item, User, n_hots, label, short_length, pre_model, device):
+    #     if label =="train":
+    #         end = -1
+    #     elif label == "test":
+    #         end =-2
     data_train = dict()
     #      for user in tqdm(range(1, usernum + 1), desc='Preparing neighborAt matrix'):
-    for user in tqdm(range(1, usernum + 1), desc='Preparing'+label+ 'neighborAt matrix'):
+    for user in tqdm(range(1, usernum + 1), desc='Preparing' + label + 'neighborAt matrix'):
         neighbor_seq = np.zeros([maxlen], dtype=np.int32)
         idx = maxlen - 1
         for i in reversed(user_train[user][:-1]):
             neighbor_seq[idx] = i
             idx -= 1
             if idx == -1: break
-        data_train[user] = computeNeighAt(neighbor_seq, user_train,  Item, maxlen, user, n_hots,short_length)
+        data_train[user] = computeNeighAt(neighbor_seq, user_train, Item, maxlen, user, n_hots, short_length, pre_model,
+                                          device)
     return data_train
 
-def computeNeighAt(item_seq, User, Item, maxlen, user, n_hots,short_length):
+
+def computeNeighAt(item_seq, User, Item, maxlen, user, n_hots, short_length, pre_model, device):
     #     float_tensor = tensor.float()
     n_hots = torch.tensor(n_hots, dtype=torch.float)
     size = item_seq.shape[0]
@@ -50,12 +53,12 @@ def computeNeighAt(item_seq, User, Item, maxlen, user, n_hots,short_length):
         userList = []
         rank = dict()
         for k in Item[i]:
-            #             aa.update(xx)
-            #             这一步torch.cosine_similarity计算一下cos值，然后把user序号和对应的cos值加入到rank字典中去，然后sort一下，大于100就直接取前一百个的user序号进入ItemList
-            # a.view(1, -1)
-            cos = torch.cosine_similarity(n_hots[user].view(1, -1), n_hots[k].view(1, -1))
-            rank[k] = cos
-
+            with torch.no_grad():
+                #                 ulist = [ 348,1147,1879,1041,169]
+                ufeat = pre_model.in_embed(torch.LongTensor([user]).to(device))
+                kfeat = pre_model.in_embed(torch.LongTensor([k]).long().to(device))
+                cos = torch.cosine_similarity(ufeat, kfeat)
+                rank[k] = cos
         # 然后根据rank的cos值对rank的key：即user序号进行排序，b=sorted(a.items(),key=lambda x:x[1],reverse=False), reverse=False是从小到大，reverse = True为从大到小
         rank_sorted = sorted(rank.items(), key=lambda x: x[1], reverse=True)
         if len(rank_sorted) <= 10:
@@ -73,9 +76,9 @@ def computeNeighAt(item_seq, User, Item, maxlen, user, n_hots,short_length):
             # count对应10个user的每一个user
             count += 1
             # 找出item i之前数的10个项目,按顺序
-            counter=0
+            counter = 0
             for m in User[user][:-1]:
-                if m==i:
+                if m == i:
                     break
                 counter += 1
             for j in reversed(User[k][:counter]):
@@ -85,20 +88,21 @@ def computeNeighAt(item_seq, User, Item, maxlen, user, n_hots,short_length):
 
     return neigh_matrix
 
-def Neighbor_Op(User, usernum, maxlen, Item, n_hots, label):
+
+def Neighbor_Op(User, usernum, maxlen, Item, n_hots, label, pre_model, device):
     data_train = dict()
-    for user in tqdm(range(1, usernum + 1), desc='Preparing'+label+'neighbor matrix'):
+    for user in tqdm(range(1, usernum + 1), desc='Preparing' + label + 'neighbor matrix'):
         neighbor_seq = np.zeros([maxlen], dtype=np.int32)
         idx = maxlen - 1
         for i in reversed(User[user][:-1]):
             neighbor_seq[idx] = i
             idx -= 1
             if idx == -1: break
-        data_train[user] = computeNeigh(neighbor_seq, User, Item, maxlen, user, n_hots)
+        data_train[user] = computeNeigh(neighbor_seq, User, Item, maxlen, user, n_hots, pre_model, device)
     return data_train
 
 
-def computeNeigh(item_seq, User, Item, maxlen, user, n_hots):
+def computeNeigh(item_seq, User, Item, maxlen, user, n_hots, pre_model, device):
     n_hots = torch.tensor(n_hots, dtype=torch.float)
     neigh_matrix = np.zeros([maxlen, 10, maxlen], dtype=np.int32)
     firstDimen = -1
@@ -111,9 +115,16 @@ def computeNeigh(item_seq, User, Item, maxlen, user, n_hots):
         userList = []
         rank = dict()
         for k in Item[i]:
-            cos = torch.cosine_similarity(n_hots[user].view(1, -1), n_hots[k].view(1, -1))
-            rank[k] = cos
-
+            # ###################3
+            # 这里的k就是二阶邻居了，把这个n_hots的one-hot编码改成 n2v的嵌入就可以了
+            # ###################3
+            # cos = torch.cosine_similarity(n_hots[user].view(1, -1), n_hots[k].view(1, -1))
+            with torch.no_grad():
+                #                 ulist = [ 348,1147,1879,1041,169]
+                ufeat = pre_model.in_embed(torch.LongTensor([user]).to(device))
+                kfeat = pre_model.in_embed(torch.LongTensor([k]).long().to(device))
+                cos = torch.cosine_similarity(ufeat, kfeat)
+                rank[k] = cos
         rank_sorted = sorted(rank.items(), key=lambda x: x[1], reverse=True)
         if len(rank_sorted) <= 10:
             length = len(rank_sorted)
@@ -134,7 +145,8 @@ def computeNeigh(item_seq, User, Item, maxlen, user, n_hots):
     return neigh_matrix
 
 
-def sample_function(user_train, neighbor_matrix, neighborAt_matrix, usernum, itemnum, batch_size, maxlen, result_queue, SEED):
+def sample_function(user_train, neighbor_matrix, neighborAt_matrix, usernum, itemnum, batch_size, maxlen, result_queue,
+                    SEED):
     def sample():
         user = np.random.randint(1, usernum + 1)
         while len(user_train[user]) <= 1: user = np.random.randint(1, usernum + 1)
@@ -168,7 +180,8 @@ def sample_function(user_train, neighbor_matrix, neighborAt_matrix, usernum, ite
 
 
 class WarpSampler(object):
-    def __init__(self, User, neighbor_matrix, neighborAt_matrix, usernum, itemnum, batch_size=64, maxlen=10, n_workers=1):
+    def __init__(self, User, neighbor_matrix, neighborAt_matrix, usernum, itemnum, batch_size=64, maxlen=10,
+                 n_workers=1):
         self.result_queue = Queue(maxsize=n_workers * 10)
         self.processors = []
         for i in range(n_workers):
@@ -204,7 +217,7 @@ def timeSlice(time_set):
 
 
 def reduceNeighUser(Item, User, usersize, itemsize, maxlen):
-    user_matrix = np.zeros([usersize+1, maxlen], dtype=np.int64)
+    user_matrix = np.zeros([usersize + 1, maxlen], dtype=np.int64)
     for i in range(usersize + 1):
         if (i == 0):
             continue
@@ -220,10 +233,11 @@ def reduceNeighUser(Item, User, usersize, itemsize, maxlen):
     user_matrix = torch.from_numpy(user_matrix)
 
     one_hots = torch.nn.functional.one_hot(user_matrix, n)  # size=(15, 15, n)
-
+    # 相当于说在这里做了一个one-hot编码的转换
     n_hots = torch.sum(one_hots, dim=1)
     n_hots[:, 0] = 0
     return n_hots
+
 
 def cleanAndsort(Item, User, maxlen):
     User_all = defaultdict(list)
@@ -265,6 +279,7 @@ def cleanAndsort(Item, User, maxlen):
         user_map[user] = u + 1
     for i, item in enumerate(item_set):
         item_map[item] = i + 1
+    # 重新标号后直接用这个号码作为编号进行 node2vec的嵌入
 
     User_all_res = dict()
     User_res = dict()
@@ -287,11 +302,11 @@ def cleanAndsort(Item, User, maxlen):
         Item_res[item_map[item]] = list(map(lambda x: user_map[x], users))
     for item, users in train_Item.items():
         train_Item_res[item_map[item]] = list(map(lambda x: user_map[x], users))
-
+    # n_hots可以先留着不管，后面不用就行了
     n_hots = reduceNeighUser(Item_res, User_res, len(user_set), len(item_set) + 1, maxlen)
 
     return User_all_res, Item_all_res, User_res, Item_res, train_User_res, train_Item_res, len(user_set), len(
-        item_set), n_hots
+        item_set), n_hots, user_map
 
 
 # train/val/test data generation
@@ -332,7 +347,9 @@ def data_partition(fname, maxlen):
         User[u].append(i)
         Item[i].append(u)
     f.close()
-    all_User, all_Item, User, Item, train_User, train_Item, usernum, itemnum, n_hots = cleanAndsort(Item, User, maxlen)
+    all_User, all_Item, User, Item, train_User, train_Item, usernum, itemnum, n_hots, user_map = cleanAndsort(Item,
+                                                                                                              User,
+                                                                                                              maxlen)
 
     for user in User:
         nfeedback = len(User[user])
@@ -352,13 +369,14 @@ def data_partition(fname, maxlen):
             user_test[user].append(User[user][-1])
     print('Preparing done...')
     return [user_train, user_train_valid, user_train_test, user_valid, user_test, usernum, itemnum, all_User, all_Item,
-            User, Item, train_User, train_Item, n_hots]
+            User, Item, train_User, train_Item, n_hots, user_map, item_count]
 
 
 # TODO: merge evaluate functions for test and val set
 # evaluate on test set
 def evaluate(model, dataset, neigh_matrix, test_neighAt_matrix, args):
-    [train, train_valid, train_test, valid, test, usernum, itemnum, all_User, all_Item, User, Item, train_User, train_Item, n_hots] = copy.deepcopy(dataset)
+    [train, train_valid, train_test, valid, test, usernum, itemnum, all_User, all_Item, User, Item, train_User,
+     train_Item, n_hots, user_map, item_count] = copy.deepcopy(dataset)
 
     NDCG = 0.0
     HT = 0.0
@@ -412,7 +430,8 @@ def evaluate(model, dataset, neigh_matrix, test_neighAt_matrix, args):
 
 # evaluate on val set
 def evaluate_valid(model, dataset, neigh_matrix, test_neighAt_matrix, args):
-    [train, train_valid, train_test, valid, test, usernum, itemnum, all_User, all_Item, User, Item, train_User, train_Item, n_hots] = copy.deepcopy(dataset)
+    [train, train_valid, train_test, valid, test, usernum, itemnum, all_User, all_Item, User, Item, train_User,
+     train_Item, n_hots, user_map, item_count] = copy.deepcopy(dataset)
 
     NDCG = 0.0
     valid_user = 0.0
